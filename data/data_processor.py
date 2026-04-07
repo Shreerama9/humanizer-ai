@@ -140,8 +140,21 @@ class DataProcessor:
         return DatasetDict(splits)
 
     def get_formatting_func(self):
-        """Returns a formatting function compatible with TRL's SFTTrainer."""
-        def formatting_prompts_func(example):
-            return [self._format_prompt(ex) for ex in example] if isinstance(example, list) \
-                else self._format_prompt(example)
+        """
+        Returns a formatting function compatible with TRL's SFTTrainer.
+
+        SFTTrainer calls this with a batch dict ({"instruction": [...], "output": [...], ...})
+        and expects a list of formatted strings back.
+        Note: when using DataProcessor.load_and_process(), the dataset already has a
+        "text" field — pass dataset_text_field="text" to SFTTrainer instead of this func.
+        Use this only if you load raw Alpaca JSONL without pre-formatting.
+        """
+        def formatting_prompts_func(batch: dict) -> list[str]:
+            instructions = batch.get("instruction", [])
+            inputs = batch.get("input", [""] * len(instructions))
+            outputs = batch.get("output", [""] * len(instructions))
+            return [
+                self._format_prompt({"instruction": inst, "input": inp, "output": out})
+                for inst, inp, out in zip(instructions, inputs, outputs)
+            ]
         return formatting_prompts_func

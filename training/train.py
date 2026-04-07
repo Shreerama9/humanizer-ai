@@ -44,7 +44,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="training/config.yaml", help="YAML config path")
     parser.add_argument("--merge-only", action="store_true", help="Skip training, only merge adapter")
+    parser.add_argument("--no-merge", action="store_true", help="Skip merge step after training")
     parser.add_argument("--adapter-path", help="Override adapter path for merge")
+    parser.add_argument("--resume", metavar="CHECKPOINT_DIR", help="Resume training from a checkpoint directory")
     parser.add_argument("--no-wandb", action="store_true")
     args = parser.parse_args()
 
@@ -54,7 +56,7 @@ def main():
         config.merge.adapter_path = args.adapter_path
 
     if args.no_wandb:
-        os.environ["WANDB_DISABLED"] = "true"
+        config.training.report_to = ["tensorboard"]
     else:
         wandb.init(
             project="humanizer-ai",
@@ -88,10 +90,13 @@ def main():
             tokenize=False,  # SFTTrainer handles tokenization with packing
         )
         logger.info(f"Dataset: {dataset}")
-        trainer.train(dataset)
+        trainer.train(dataset, resume_from_checkpoint=args.resume)
 
-    logger.info("Merging LoRA adapter into base model...")
-    trainer.merge_and_export()
+    if not args.no_merge:
+        logger.info("Merging LoRA adapter into base model...")
+        trainer.merge_and_export()
+    else:
+        logger.info("Skipping merge (--no-merge specified).")
 
     if wandb.run:
         wandb.finish()

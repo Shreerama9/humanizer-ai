@@ -4,14 +4,24 @@ QLoRA Fine-Tuning Pipeline — Llama-3 8B for SEO Content Humanization
 Uses:
   - bitsandbytes 4-bit NF4 quantization (QLoRA)
   - PEFT LoRA adapters targeting all linear layers
-  - TRL SFTTrainer with packing and gradient checkpointing
+  - TRL SFTTrainer with optional packing and gradient checkpointing
   - Weights & Biases for experiment tracking
   - Flash Attention 2 for memory-efficient attention
+
+Packing vs. response-only loss:
+  - packing=False (default): DataCollatorForCompletionOnlyLM masks the prompt
+    tokens so loss is computed only on the ### Response: section.
+  - packing=True: sequences are concatenated for better GPU utilisation but
+    loss is computed on the full sequence (prompt + response). Use this when
+    throughput matters more than loss precision.
+  These two modes are mutually exclusive — the collator cannot find response
+  boundaries inside packed sequences.
 """
 
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import torch
 import wandb
@@ -26,6 +36,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
+    EarlyStoppingCallback,
     TrainerCallback,
     TrainerControl,
     TrainerState,
@@ -34,7 +45,6 @@ from transformers import (
 from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
 
 from training.config import FullConfig
-from data.data_processor import DataProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +89,8 @@ class HumanizerTrainer:
             torch_dtype=compute_dtype,
             trust_remote_code=self.config.model.trust_remote_code,
         )
-        model.config.use_cache = False  # Disable KV cache during training
-        model.config.pretraining_tp = 1  # Disable tensor parallelism for single-GPU
+        model.config.use_cache = False          # Disable KV cache during training
+        model.config.pretraining_tp = 1         # Disable tensor parallelism for single-GPU
         return model
 
     def _apply_lora(self, model):
@@ -121,8 +131,9 @@ class HumanizerTrainer:
             warmup_ratio=tc.warmup_ratio,
             fp16=tc.fp16,
             bf16=tc.bf16,
+            max_grad_norm=tc.max_grad_norm,
             logging_steps=tc.logging_steps,
-            evaluation_strategy=tc.eval_strategy,
+            eval_strategy=tc.eval_strategy,
             eval_steps=tc.eval_steps,
             save_strategy=tc.save_strategy,
             save_steps=tc.save_steps,
@@ -138,7 +149,7 @@ class HumanizerTrainer:
             group_by_length=tc.group_by_length,
         )
 
-    def train(self, dataset: DatasetDict) -> None:
+    def train(self, dataset: DatasetDict, resume_from_checkpoint: Optional[str] = None) -> None:
         logger.info("Loading tokenizer...")
         self.tokenizer = self._load_tokenizer()
 
@@ -150,32 +161,50 @@ class HumanizerTrainer:
 
         training_args = self._build_training_args()
 
-        # Response-only training: only compute loss on the ### Response: part
-        response_template = "### Response:\n"
-        collator = DataCollatorForCompletionOnlyLM(
-            response_template=response_template,
-            tokenizer=self.tokenizer,
-        )
+        tc = self.config.training
+        callbacks = [LoggingCallback()]
+
+        if tc.load_best_model_at_end and tc.early_stopping_patience > 0:
+            callbacks.append(
+                EarlyStoppingCallback(early_stopping_patience=tc.early_stopping_patience)
+            )
+            logger.info(f"Early stopping enabled (patience={tc.early_stopping_patience})")
+
+        # ── Packing vs. response-only loss ────────────────────────────────────
+        # These two modes are mutually exclusive:
+        #   packing=False → DataCollatorForCompletionOnlyLM (response-only loss)
+        #   packing=True  → no collator, full-sequence loss, better GPU utilisation
+        if tc.packing:
+            logger.info("Packing enabled — full-sequence loss (prompt + response).")
+            data_collator = None
+        else:
+            logger.info("Packing disabled — response-only loss via DataCollatorForCompletionOnlyLM.")
+            response_template = "### Response:\n"
+            data_collator = DataCollatorForCompletionOnlyLM(
+                response_template=response_template,
+                tokenizer=self.tokenizer,
+            )
 
         trainer = SFTTrainer(
             model=self.model,
             train_dataset=dataset["train"],
             eval_dataset=dataset.get("eval"),
             peft_config=peft_config,
-            max_seq_length=self.config.training.max_seq_length,
+            dataset_text_field="text",      # Column name produced by DataProcessor
+            max_seq_length=tc.max_seq_length,
             tokenizer=self.tokenizer,
             args=training_args,
-            packing=self.config.training.packing,
-            data_collator=collator,
-            callbacks=[LoggingCallback()],
+            packing=tc.packing,
+            data_collator=data_collator,
+            callbacks=callbacks,
         )
 
         logger.info("Starting training...")
-        trainer.train()
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        logger.info(f"Saving adapter to {self.config.training.output_dir}")
+        logger.info(f"Saving adapter to {tc.output_dir}")
         trainer.save_model()
-        self.tokenizer.save_pretrained(self.config.training.output_dir)
+        self.tokenizer.save_pretrained(tc.output_dir)
 
     # ── Merge LoRA → base model ───────────────────────────────────────────────
 
@@ -183,13 +212,14 @@ class HumanizerTrainer:
         """
         Merge LoRA weights back into the base model for efficient inference.
         The merged model can be loaded without PEFT at serving time.
+        Merging on CPU avoids GPU OOM on large models.
         """
         from peft import AutoPeftModelForCausalLM
 
-        logger.info("Loading adapter for merge...")
+        logger.info(f"Loading adapter for merge from {self.config.merge.adapter_path}...")
         merged_model = AutoPeftModelForCausalLM.from_pretrained(
             self.config.merge.adapter_path,
-            device_map="cpu",                # Merge on CPU to avoid OOM
+            device_map="cpu",
             torch_dtype=torch.float16,
         )
         merged_model = merged_model.merge_and_unload()

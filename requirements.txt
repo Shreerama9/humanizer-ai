@@ -1,9 +1,12 @@
 # Core ML
-torch==2.3.1
+# PyTorch: install separately for your CUDA version — see README Quickstart
+# RTX 50xx (Blackwell sm_120): pip install torch --index-url https://download.pytorch.org/whl/cu128
+# RTX 30xx/40xx (sm_86/sm_89):  pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.7.0
 transformers==4.44.2
 peft==0.12.0
 trl==0.9.6
-bitsandbytes==0.43.3
+bitsandbytes>=0.44.0
 accelerate==0.33.0
 datasets==2.21.0
 tokenizers==0.19.1

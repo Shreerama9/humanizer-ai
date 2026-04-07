@@ -1,0 +1,23 @@
+[project]
+name = "humanizer-ai"
+version = "1.0.0"
+description = "QLoRA fine-tuning pipeline for SEO content humanization"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "UP007",  # Optional[X] → X | None — transformers still uses Optional
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["api", "data", "evaluation", "training"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

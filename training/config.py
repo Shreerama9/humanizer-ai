@@ -9,14 +9,14 @@ from typing import Optional
 
 @dataclass
 class ModelConfig:
-    model_id: str = "meta-llama/Meta-Llama-3-8B-Instruct"
+    model_id: str = "Qwen/Qwen2.5-7B-Instruct"
     # 4-bit NF4 quantization (QLoRA)
     load_in_4bit: bool = True
     bnb_4bit_quant_type: str = "nf4"          # NF4 outperforms FP4 on most tasks
     bnb_4bit_compute_dtype: str = "bfloat16"  # BF16 for stability on A100/H100
     bnb_4bit_use_double_quant: bool = True     # Nested quantization saves ~0.4 bits/param
     trust_remote_code: bool = False
-    attn_implementation: str = "flash_attention_2"  # Requires flash-attn>=2.0
+    attn_implementation: str = "sdpa"          # Built-in PyTorch SDPA; use flash_attention_2 if wheel available
 
 
 @dataclass
@@ -58,13 +58,15 @@ class TrainingConfig:
     load_best_model_at_end: bool = True
     metric_for_best_model: str = "eval_loss"
     greater_is_better: bool = False
+    max_grad_norm: float = 1.0              # Gradient clipping — prevents exploding gradients
     report_to: list[str] = field(default_factory=lambda: ["wandb", "tensorboard"])
     run_name: str = "humanizer-qlora-llama3-8b"
     seed: int = 42
-    dataloader_num_workers: int = 4
-    remove_unused_columns: bool = False
+    dataloader_num_workers: int = 0
+    remove_unused_columns: bool = True
     group_by_length: bool = True            # Batch similar-length sequences → less padding
-    packing: bool = True                    # Pack short sequences → better GPU utilization
+    packing: bool = False                   # False = response-only loss via collator; True = full-sequence loss + faster
+    early_stopping_patience: int = 3        # Stop if eval_loss doesn't improve for N evals
 
 
 @dataclass

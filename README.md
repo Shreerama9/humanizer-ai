@@ -29,6 +29,12 @@ humanizer-ai/
 
 ### 1. Install dependencies
 ```bash
+# Install PyTorch first — match your GPU architecture:
+#   RTX 50xx Blackwell (sm_120): CUDA 12.8
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+#   RTX 30xx / 40xx (sm_86/sm_89): CUDA 12.1
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
 pip install -r requirements.txt
 # Flash Attention (optional, requires CUDA 12.x):
 pip install flash-attn --no-build-isolation

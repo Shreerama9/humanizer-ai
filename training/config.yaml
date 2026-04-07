@@ -1,10 +1,10 @@
 model:
-  model_id: "meta-llama/Meta-Llama-3-8B-Instruct"
+  model_id: "Qwen/Qwen2.5-7B-Instruct"
   load_in_4bit: true
   bnb_4bit_quant_type: "nf4"
   bnb_4bit_compute_dtype: "bfloat16"
   bnb_4bit_use_double_quant: true
-  attn_implementation: "flash_attention_2"
+  attn_implementation: "sdpa"    # flash_attention_2 may lack sm_120 wheels; sdpa is built into PyTorch
 
 lora:
   r: 64
@@ -22,7 +22,7 @@ lora:
   use_rslora: true
 
 training:
-  output_dir: "checkpoints/humanizer-llama3-8b"
+  output_dir: "checkpoints/humanizer-qwen2.5-7b"
   num_train_epochs: 3
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
@@ -45,10 +45,14 @@ training:
   load_best_model_at_end: true
   metric_for_best_model: "eval_loss"
   greater_is_better: false
-  run_name: "humanizer-qlora-llama3-8b"
+  max_grad_norm: 1.0
+  run_name: "humanizer-qlora-qwen2.5-7b"
   seed: 42
-  packing: true
+  packing: false         # false = response-only loss (recommended); true = full-seq loss + faster throughput
   group_by_length: true
+  early_stopping_patience: 3
+  dataloader_num_workers: 0    # 0 = main process only, avoids tokenizer parallelism fork warnings
+  remove_unused_columns: true  # must be true — drops raw 'text' col after tokenization so collator only sees input_ids/labels
 
 data:
   train_file: "data/raw/seo_dataset_train.jsonl"
@@ -57,7 +61,7 @@ data:
   max_output_words: 2000
 
 merge:
-  adapter_path: "checkpoints/humanizer-llama3-8b"
-  merged_output_dir: "models/humanizer-llama3-8b-merged"
+  adapter_path: "checkpoints/humanizer-qwen2.5-7b"
+  merged_output_dir: "models/humanizer-qwen2.5-7b-merged"
   push_to_hub: false
   hub_repo_id: null
