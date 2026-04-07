@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+.venv/
+venv/
+env/
+
+# Model weights — never commit large binaries
+models/
+checkpoints/
+*.bin
+*.safetensors
+*.gguf
+*.ggml
+*.pt
+*.pth
+
+# Datasets — generated locally, not versioned
+data/raw/
+data/processed/
+
+# Secrets / environment
+.env
+.env.local
+.env.*.local
+
+# Wandb / experiment tracking
+wandb/
+runs/
+lightning_logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Next.js / Node
+ui/node_modules/
+ui/.next/
+ui/out/
+ui/.env.local
+ui/.env.*.local
+
+# Coverage / test artifacts
+.coverage
+htmlcov/
+.pytest_cache/

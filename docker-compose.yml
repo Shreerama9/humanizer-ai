@@ -1,0 +1,50 @@
+services:
+  # ── Inference API ─────────────────────────────────────────────────────────
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - MODEL_PATH=${MODEL_PATH:-models/humanizer-llama3-8b-merged}
+      - USE_4BIT=${USE_4BIT:-true}
+      - MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-2048}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+    volumes:
+      - ./models:/app/models          # Mount fine-tuned model weights
+      - ./checkpoints:/app/checkpoints
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s              # Allow time for model to load
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ── Web UI ────────────────────────────────────────────────────────────────
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

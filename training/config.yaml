@@ -1,0 +1,63 @@
+model:
+  model_id: "meta-llama/Meta-Llama-3-8B-Instruct"
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+  attn_implementation: "flash_attention_2"
+
+lora:
+  r: 64
+  lora_alpha: 16
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  lora_dropout: 0.05
+  bias: "none"
+  use_rslora: true
+
+training:
+  output_dir: "checkpoints/humanizer-llama3-8b"
+  num_train_epochs: 3
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+  optim: "paged_adamw_8bit"
+  learning_rate: 0.0002
+  weight_decay: 0.001
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_seq_length: 2048
+  bf16: true
+  fp16: false
+  logging_steps: 10
+  eval_strategy: "steps"
+  eval_steps: 100
+  save_strategy: "steps"
+  save_steps: 200
+  save_total_limit: 3
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+  run_name: "humanizer-qlora-llama3-8b"
+  seed: 42
+  packing: true
+  group_by_length: true
+
+data:
+  train_file: "data/raw/seo_dataset_train.jsonl"
+  eval_file: "data/raw/seo_dataset_eval.jsonl"
+  min_output_words: 200
+  max_output_words: 2000
+
+merge:
+  adapter_path: "checkpoints/humanizer-llama3-8b"
+  merged_output_dir: "models/humanizer-llama3-8b-merged"
+  push_to_hub: false
+  hub_repo_id: null
